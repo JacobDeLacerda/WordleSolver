@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wordle Solver</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #121213;
+      --surface:   #1a1a1b;
+      --border:    #3a3a3c;
+      --border-hi: #565758;
+      --text:      #ffffff;
+      --muted:     #818384;
+      --absent:    #3a3a3c;
+      --present:   #b59f3b;
+      --correct:   #538d4e;
+      --error:     #e04c4c;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Clear Sans', 'Helvetica Neue', Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────── */
+    header {
+      width: 100%;
+      max-width: 960px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    header h1 {
+      font-size: 1.4rem;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    #reset-btn {
+      background: transparent;
+      border: 1px solid var(--border-hi);
+      color: var(--text);
+      padding: 6px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: .82rem;
+      letter-spacing: .05em;
+      transition: background .15s;
+    }
+    #reset-btn:hover { background: var(--border); }
+
+    /* ── Layout ─────────────────────────────────────────────────────── */
+    main {
+      width: 100%;
+      max-width: 960px;
+      flex: 1;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 36px;
+      padding: 28px 24px 0;
+      align-items: start;
+    }
+
+    /* ── Grid ───────────────────────────────────────────────────────── */
+    #grid-section { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+
+    #grid { display: flex; flex-direction: column; gap: 5px; }
+
+    .row { display: flex; gap: 5px; }
+
+    .tile {
+      width: 62px;
+      height: 62px;
+      border: 2px solid var(--border);
+      border-radius: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.85rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      user-select: none;
+      transition: background .12s, border-color .12s, color .12s;
+    }
+    .tile.popped { border-color: var(--border-hi); }
+    .tile.clickable { cursor: pointer; }
+    .tile.clickable:hover { opacity: .85; }
+
+    .tile.absent  { background: var(--absent);  border-color: var(--absent);  color: #fff; }
+    .tile.present { background: var(--present); border-color: var(--present); color: #fff; }
+    .tile.correct { background: var(--correct); border-color: var(--correct); color: #fff; }
+
+    #game-msg {
+      font-size: .95rem;
+      font-weight: 700;
+      letter-spacing: .04em;
+      min-height: 1.4em;
+      text-align: center;
+    }
+    #game-msg.win  { color: var(--correct); }
+    #game-msg.lose { color: var(--error); }
+
+    /* ── Info panel ─────────────────────────────────────────────────── */
+    #info-panel { display: flex; flex-direction: column; gap: 14px; padding-top: 2px; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 18px;
+    }
+
+    .card-label {
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    #remaining-num {
+      font-size: 2.4rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+    #remaining-sub {
+      font-size: .78rem;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    .suggestion-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 4px 0;
+    }
+    .s-rank { font-size: .72rem; color: var(--muted); width: 14px; text-align: right; flex-shrink: 0; }
+    .s-word {
+      font-size: 1.05rem;
+      font-weight: 800;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      flex: 1;
+    }
+    .s-word.best { color: var(--correct); }
+    .s-badge {
+      font-size: .65rem;
+      font-weight: 600;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 1px 5px;
+      letter-spacing: .04em;
+    }
+    .s-use {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 2px 9px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: .7rem;
+      transition: all .15s;
+      flex-shrink: 0;
+    }
+    .s-use:hover { background: var(--border); color: var(--text); }
+
+    #possible-card { display: none; }
+    #possible-words {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .pw {
+      font-size: .82rem;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    /* ── Input area ─────────────────────────────────────────────────── */
+    #input-area {
+      width: 100%;
+      max-width: 960px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 24px 24px 6px;
+    }
+
+    #guess-input {
+      width: 280px;
+      padding: 12px 16px;
+      font-size: 1.1rem;
+      font-weight: 800;
+      letter-spacing: .22em;
+      text-transform: uppercase;
+      background: var(--surface);
+      border: 2px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      outline: none;
+      font-family: inherit;
+      transition: border-color .15s;
+      caret-color: var(--text);
+    }
+    #guess-input::placeholder {
+      text-transform: none;
+      letter-spacing: normal;
+      font-weight: 400;
+      color: var(--muted);
+    }
+    #guess-input:focus   { border-color: var(--border-hi); }
+    #guess-input.shake {
+      border-color: var(--error);
+      animation: shake .3s ease;
+    }
+    @keyframes shake {
+      0%,100% { transform: translateX(0); }
+      20%,60% { transform: translateX(-6px); }
+      40%,80% { transform: translateX(6px); }
+    }
+
+    #submit-btn {
+      padding: 12px 26px;
+      background: var(--correct);
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: .9rem;
+      font-weight: 800;
+      letter-spacing: .06em;
+      cursor: pointer;
+      font-family: inherit;
+      transition: opacity .15s;
+    }
+    #submit-btn:hover:not(:disabled) { opacity: .85; }
+    #submit-btn:disabled { background: var(--border); cursor: not-allowed; opacity: 1; }
+
+    /* ── Legend ─────────────────────────────────────────────────────── */
+    #legend {
+      width: 100%;
+      max-width: 960px;
+      padding: 6px 24px 24px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 20px;
+      align-items: center;
+      font-size: .78rem;
+      color: var(--muted);
+    }
+    .leg { display: flex; align-items: center; gap: 6px; }
+    .leg-swatch {
+      width: 18px; height: 18px;
+      border-radius: 2px;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+    .leg-swatch.absent  { background: var(--absent); }
+    .leg-swatch.present { background: var(--present); }
+    .leg-swatch.correct { background: var(--correct); }
+
+    /* ── Toast ───────────────────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--text);
+      color: var(--bg);
+      padding: 9px 18px;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: .88rem;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity .25s;
+      z-index: 999;
+      white-space: nowrap;
+    }
+    #toast.show { opacity: 1; }
+
+    /* ── Responsive ──────────────────────────────────────────────────── */
+    @media (max-width: 640px) {
+      main { grid-template-columns: 1fr; justify-items: center; }
+      .tile { width: 52px; height: 52px; font-size: 1.5rem; }
+      #guess-input { width: 200px; font-size: 1rem; padding: 10px 12px; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="toast"></div>
+
+<header>
+  <h1>Wordle Solver</h1>
+  <button id="reset-btn">↺ New Game</button>
+</header>
+
+<main>
+  <div id="grid-section">
+    <div id="grid"></div>
+    <div id="game-msg"></div>
+  </div>
+
+  <div id="info-panel">
+    <div class="card">
+      <div class="card-label">Possible Words</div>
+      <div id="remaining-num">—</div>
+      <div id="remaining-sub">loading…</div>
+    </div>
+
+    <div class="card" id="suggestions-card">
+      <div class="card-label">Suggested Guesses</div>
+      <div id="suggestion-list">
+        <div style="color:var(--muted);font-size:.85rem">Computing…</div>
+      </div>
+    </div>
+
+    <div class="card" id="possible-card">
+      <div class="card-label">Remaining Possibilities</div>
+      <div id="possible-words"></div>
+    </div>
+  </div>
+</main>
+
+<div id="input-area">
+  <input id="guess-input" type="text" maxlength="5"
+         placeholder="Type your guess…"
+         autocomplete="off" autocorrect="off"
+         autocapitalize="characters" spellcheck="false">
+  <button id="submit-btn">Submit</button>
+</div>
+
+<div id="legend">
+  <span>After typing 5 letters, click tiles to set feedback:</span>
+  <span class="leg"><span class="leg-swatch absent"></span>Not in word</span>
+  <span class="leg"><span class="leg-swatch present"></span>Wrong position</span>
+  <span class="leg"><span class="leg-swatch correct"></span>Correct spot</span>
+</div>
+
+<script src="words.js"></script>
+<script>
+'use strict';
+
+// ── Solver ───────────────────────────────────────────────────────────────────
+
+class WordleSolver {
+  constructor(allWords) {
+    this.allWords = allWords;
+    this.remaining = allWords.slice();
+    this.history = []; // [{word, feedback: string[5]}]
+  }
+
+  addGuess(word, feedback) {
+    this.history.push({ word, feedback });
+    this.remaining = this._filter(this.allWords, this.history);
+  }
+
+  _filter(words, history) {
+    return words.filter(c => history.every(({ word, feedback }) => this._matches(c, word, feedback)));
+  }
+
+  _matches(candidate, guess, feedback) {
+    // Build per-letter min/max count constraints for this (guess, feedback) pair
+    const minCount = {};
+    const maxCount = {};
+
+    for (let i = 0; i < 5; i++) {
+      const f = feedback[i], l = guess[i];
+      if (f === 'correct' || f === 'present') minCount[l] = (minCount[l] || 0) + 1;
+    }
+    for (let i = 0; i < 5; i++) {
+      const f = feedback[i], l = guess[i];
+      if (f === 'absent' && maxCount[l] === undefined) maxCount[l] = minCount[l] || 0;
+    }
+
+    // Positional checks
+    for (let i = 0; i < 5; i++) {
+      const l = guess[i], f = feedback[i];
+      if (f === 'correct' && candidate[i] !== l) return false;
+      if (f === 'present' && candidate[i] === l) return false;
+    }
+
+    // Letter count checks
+    const counts = {};
+    for (const c of candidate) counts[c] = (counts[c] || 0) + 1;
+    for (const l in minCount) if ((counts[l] || 0) < minCount[l]) return false;
+    for (const l in maxCount) if ((counts[l] || 0) > maxCount[l]) return false;
+
+    return true;
+  }
+
+  getSuggestions(topN = 5) {
+    const n = this.remaining.length;
+    if (n === 0) return [];
+    if (n <= 2) return this.remaining.slice(0, topN);
+
+    // Compute letter frequencies across remaining words
+    const lFreq = {}, pFreq = [{},{},{},{},{}];
+    for (const w of this.remaining) {
+      const seen = new Set();
+      for (let i = 0; i < 5; i++) {
+        const l = w[i];
+        pFreq[i][l] = (pFreq[i][l] || 0) + 1;
+        if (!seen.has(l)) { lFreq[l] = (lFreq[l] || 0) + 1; seen.add(l); }
+      }
+    }
+
+    const remSet = new Set(this.remaining);
+    // Use full word pool early-game or when many words remain (maximises information)
+    const useAll = this.history.length < 2 || n > 20;
+    const pool = useAll ? this.allWords : this.remaining;
+
+    const score = (word) => {
+      let s = 0;
+      const seen = new Set();
+      for (let i = 0; i < 5; i++) {
+        const l = word[i];
+        s += (pFreq[i][l] || 0) * 2;
+        if (!seen.has(l)) { s += (lFreq[l] || 0); seen.add(l); }
+      }
+      if (remSet.has(word)) s *= 1.1; // slight bonus for valid-answer candidates
+      return s;
+    };
+
+    const scored = pool.map(w => [w, score(w)]);
+    scored.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    return scored.slice(0, topN).map(s => s[0]);
+  }
+
+  reset() {
+    this.remaining = this.allWords.slice();
+    this.history = [];
+  }
+}
+
+// ── State ────────────────────────────────────────────────────────────────────
+
+const wordSet = new Set(WORDS);
+const solver  = new WordleSolver(WORDS);
+
+function freshRows() {
+  return Array.from({ length: 6 }, () => ({
+    word:     '',
+    feedback: Array(5).fill('absent'),
+    locked:   false
+  }));
+}
+
+const state = {
+  rows: freshRows(),
+  cur:  0,       // current row index (0–5)
+  over: false
+};
+
+// ── DOM refs ─────────────────────────────────────────────────────────────────
+
+const gridEl      = document.getElementById('grid');
+const inputEl     = document.getElementById('guess-input');
+const submitBtn   = document.getElementById('submit-btn');
+const resetBtn    = document.getElementById('reset-btn');
+const remNum      = document.getElementById('remaining-num');
+const remSub      = document.getElementById('remaining-sub');
+const sugList     = document.getElementById('suggestion-list');
+const possCard    = document.getElementById('possible-card');
+const possWords   = document.getElementById('possible-words');
+const gameMsg     = document.getElementById('game-msg');
+const toastEl     = document.getElementById('toast');
+
+// ── Grid ─────────────────────────────────────────────────────────────────────
+
+function buildGrid() {
+  gridEl.innerHTML = '';
+  for (let r = 0; r < 6; r++) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    for (let c = 0; c < 5; c++) {
+      const tile = document.createElement('div');
+      tile.className = 'tile';
+      tile.id = `t${r}${c}`;
+      tile.addEventListener('click', () => tileClick(r, c));
+      row.appendChild(tile);
+    }
+    gridEl.appendChild(row);
+  }
+}
+
+function renderGrid() {
+  for (let r = 0; r < 6; r++) {
+    const row = state.rows[r];
+    const isActive = r === state.cur && !row.locked;
+    const full = row.word.length === 5;
+
+    for (let c = 0; c < 5; c++) {
+      const tile = document.getElementById(`t${r}${c}`);
+      const letter = row.word[c] || '';
+      tile.textContent = letter.toUpperCase();
+
+      // Reset classes
+      tile.className = 'tile';
+
+      if (row.locked) {
+        tile.classList.add(row.feedback[c]);
+      } else if (isActive && letter) {
+        tile.classList.add('popped');
+        if (full) {
+          tile.classList.add(row.feedback[c], 'clickable');
+        }
+      }
+    }
+  }
+}
+
+function tileClick(r, c) {
+  if (r !== state.cur || state.rows[r].locked || state.over) return;
+  if (state.rows[r].word.length !== 5) return;
+
+  const cycle = ['absent', 'present', 'correct'];
+  const cur = state.rows[r].feedback[c];
+  state.rows[r].feedback[c] = cycle[(cycle.indexOf(cur) + 1) % 3];
+  renderGrid();
+}
+
+// ── Info panel ───────────────────────────────────────────────────────────────
+
+function renderPanel() {
+  const n = solver.remaining.length;
+  remNum.textContent = n.toLocaleString();
+  remSub.textContent = n === 1 ? 'word remaining' : 'words remaining';
+
+  const remSet = new Set(solver.remaining);
+  const suggestions = solver.getSuggestions(5);
+  sugList.innerHTML = '';
+  suggestions.forEach((word, i) => {
+    const row = document.createElement('div');
+    row.className = 'suggestion-row';
+
+    const rank = document.createElement('span');
+    rank.className = 's-rank';
+    rank.textContent = `${i + 1}.`;
+
+    const wordEl = document.createElement('span');
+    wordEl.className = 's-word' + (i === 0 ? ' best' : '');
+    wordEl.textContent = word.toUpperCase();
+
+    const badge = document.createElement('span');
+    badge.className = 's-badge';
+    badge.textContent = remSet.has(word) ? 'answer' : 'elim';
+    badge.title = remSet.has(word)
+      ? 'Could be the answer'
+      : 'Eliminates letters (not a current candidate)';
+
+    const use = document.createElement('button');
+    use.className = 's-use';
+    use.textContent = 'use';
+    use.addEventListener('click', () => {
+      if (state.over) return;
+      inputEl.value = word.toUpperCase();
+      handleInput();
+      inputEl.focus();
+    });
+
+    row.append(rank, wordEl, badge, use);
+    sugList.appendChild(row);
+  });
+
+  if (n > 0 && n <= 20) {
+    possCard.style.display = '';
+    possWords.innerHTML = solver.remaining
+      .map(w => `<span class="pw">${w.toUpperCase()}</span>`)
+      .join('');
+  } else {
+    possCard.style.display = 'none';
+  }
+}
+
+// ── Toast ────────────────────────────────────────────────────────────────────
+
+let toastTimer;
+function toast(msg, ms = 1600) {
+  clearTimeout(toastTimer);
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), ms);
+}
+
+// ── Input handling ───────────────────────────────────────────────────────────
+
+function handleInput() {
+  const raw = inputEl.value.replace(/[^a-zA-Z]/g, '').slice(0, 5).toLowerCase();
+  inputEl.value = raw.toUpperCase();
+  const row = state.rows[state.cur];
+  if (raw !== row.word) {
+    row.word = raw;
+    row.feedback = Array(5).fill('absent'); // reset feedback when word changes
+    renderGrid();
+  }
+}
+
+function handleSubmit() {
+  if (state.over) return;
+  const row = state.rows[state.cur];
+  const word = row.word;
+
+  if (word.length !== 5) {
+    toast('Word must be 5 letters');
+    shake(); return;
+  }
+  if (!wordSet.has(word)) {
+    toast('Not in word list');
+    shake(); return;
+  }
+
+  // Lock the row and update solver
+  row.locked = true;
+  solver.addGuess(word, row.feedback);
+  renderGrid();
+  renderPanel();
+
+  const won = row.feedback.every(f => f === 'correct');
+  if (won) {
+    const praise = ['Genius!', 'Magnificent!', 'Impressive!', 'Splendid!', 'Great!', 'Phew!'];
+    setStatus(praise[state.cur] || 'Nice!', 'win');
+    endGame();
+  } else if (state.cur === 5) {
+    setStatus('Game over — reset to try again', 'lose');
+    endGame();
+  } else {
+    state.cur++;
+    inputEl.value = '';
+    state.rows[state.cur].word = '';
+    state.rows[state.cur].feedback = Array(5).fill('absent');
+    renderGrid();
+    inputEl.focus();
+  }
+}
+
+function shake() {
+  inputEl.classList.remove('shake');
+  // Trigger reflow so the animation restarts
+  void inputEl.offsetWidth;
+  inputEl.classList.add('shake');
+  inputEl.addEventListener('animationend', () => inputEl.classList.remove('shake'), { once: true });
+}
+
+function setStatus(msg, cls) {
+  gameMsg.textContent = msg;
+  gameMsg.className = cls || '';
+}
+
+function endGame() {
+  state.over = true;
+  submitBtn.disabled = true;
+  inputEl.disabled = true;
+}
+
+function handleReset() {
+  state.rows = freshRows();
+  state.cur = 0;
+  state.over = false;
+  solver.reset();
+  inputEl.value = '';
+  inputEl.disabled = false;
+  submitBtn.disabled = false;
+  setStatus('');
+  renderGrid();
+  renderPanel();
+  inputEl.focus();
+}
+
+// ── Events ───────────────────────────────────────────────────────────────────
+
+inputEl.addEventListener('input', handleInput);
+inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') handleSubmit(); });
+submitBtn.addEventListener('click', handleSubmit);
+resetBtn.addEventListener('click', handleReset);
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+
+buildGrid();
+renderGrid();
+// Compute initial suggestions off the main thread tick so the grid paints first
+setTimeout(renderPanel, 0);
+inputEl.focus();
+</script>
+</body>
+</html>
